@@ -1,22 +1,20 @@
 #!/bin/bash
 
-if ! [ -x "$(command -v docker-compose)" ]; then
-  echo 'Error: docker-compose is not installed.' >&2
-  exit 1
-fi
+# compose_args="-f docker-compose-for-local.yaml --env-file .env-local"
+compose_args=""
 
-domains=(__domain_name__)
+domains=(beckn-ondc-buyer-app.locavora.org beckn-ondc-buyer-app-webhook.locavora.org)
 rsa_key_size=4096
 data_path="./data/certbot"
-email="contactus@dataorc.in" # Adding a valid address is strongly recommended
+email="admin@locavora.org" # Adding a valid address is strongly recommended
 staging=0 # Set to 1 if you're testing your setup to avoid hitting request limits
 
-#if [ -d "$data_path" ]; then
-#  read -p "Existing data found for $domains. Continue and replace existing certificate? (y/N) " decision
-#  if [ "$decision" != "Y" ] && [ "$decision" != "y" ]; then
-#    exit
-#  fi
-#fi
+if [ -d "$data_path" ]; then
+  read -p "Existing data found for $domains. Continue and replace existing certificate? (y/N) " decision
+  if [ "$decision" != "Y" ] && [ "$decision" != "y" ]; then
+    exit
+  fi
+fi
 
 
 if [ ! -e "$data_path/conf/options-ssl-nginx.conf" ] || [ ! -e "$data_path/conf/ssl-dhparams.pem" ]; then
@@ -30,7 +28,7 @@ fi
 echo "### Creating dummy certificate for $domains ..."
 path="/etc/letsencrypt/live/$domains"
 mkdir -p "$data_path/conf/live/$domains"
-docker-compose run --rm --entrypoint "\
+sudo docker compose run --rm --entrypoint $compose_args "\
   openssl req -x509 -nodes -newkey rsa:$rsa_key_size -days 1\
     -keyout '$path/privkey.pem' \
     -out '$path/fullchain.pem' \
@@ -39,11 +37,11 @@ echo
 
 
 echo "### Starting nginx ..."
-docker-compose up --force-recreate -d nginx
+sudo docker compose up $compose_args -d nginx
 echo
 
 echo "### Deleting dummy certificate for $domains ..."
-docker-compose run --rm --entrypoint "\
+sudo docker compose run --rm --entrypoint $compose_args "\
   rm -Rf /etc/letsencrypt/live/$domains && \
   rm -Rf /etc/letsencrypt/archive/$domains && \
   rm -Rf /etc/letsencrypt/renewal/$domains.conf" certbot
@@ -57,7 +55,7 @@ for domain in "${domains[@]}"; do
   domain_args="$domain_args -d $domain"
 done
 
-# Select ppropriate email arg
+# Select appropriate email arg
 case "$email" in
   "") email_arg="--register-unsafely-without-email" ;;
   *) email_arg="--email $email" ;;
@@ -66,8 +64,8 @@ esac
 # Enable staging mode if needed
 if [ $staging != "0" ]; then staging_arg="--staging"; fi
 
-docker-compose run --rm --entrypoint "\
-  certbot certonly --webroot -v -w /var/www/certbot \
+sudo docker compose run --rm --entrypoint $compose_args "\
+  certbot certonly --webroot -w /var/www/certbot \
     $staging_arg \
     $email_arg \
     $domain_args \
@@ -77,4 +75,4 @@ docker-compose run --rm --entrypoint "\
 echo
 
 echo "### Reloading nginx ..."
-docker-compose exec nginx nginx -s reload
+sudo docker compose exec nginx $compose_args nginx -s reload

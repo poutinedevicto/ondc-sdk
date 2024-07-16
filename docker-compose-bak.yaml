@@ -1,16 +1,4 @@
 services:
-
-  cache:
-    image: redis:6.2-alpine
-    restart: always
-    ports:
-      - 6379:6379
-    expose:
-      - 6379
-    command: redis-server --save 20 1 --loglevel warning
-    networks:
-      - ondc-bap
-    
   mongo:
     image: mongo
     restart: always
@@ -18,8 +6,6 @@ services:
       - 27017:27017
     volumes:
       - "./data:/data/db"
-    networks:
-      - ondc-bap
 
   mmi-client:
     image: navdeep710/ondc-ancillary-services:v3
@@ -37,8 +23,6 @@ services:
       - 8000:8000
     expose:
       - 8000
-    networks:
-      - ondc-bap
 
   nginx:
     build:
@@ -56,9 +40,13 @@ services:
         REACT_APP_PAYMENT_SERVICE_URL: ${REACT_APP_PAYMENT_SERVICE_URL}
         REGISTRY_BASE_URL: ${REGISTRY_BASE_URL}
     container_name: biap-app-ui-front
-    image: biap-app-ui-front:latest
     #    depends_on:
     #      - biap-bap-client
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
     environment:
       REACT_APP_BASE_URL: ${REACT_APP_BASE_URL}
       REACT_APP_MMI_BASE_URL: ${REACT_APP_MMI_BASE_URL}
@@ -76,8 +64,6 @@ services:
     volumes:
       - ./data/certbot/conf:/etc/letsencrypt
       - ./data/certbot/www:/var/www/certbot
-    networks:
-      - ondc-bap
 
   certbot:
     image: certbot/certbot
@@ -86,16 +72,20 @@ services:
       - ./data/certbot/conf:/etc/letsencrypt
       - ./data/certbot/www:/var/www/certbot
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
-    networks:
-      - ondc-bap
 
   biap-client-node-js:
     restart: "always"
     build:
       context: biap-client-node-js
       args:
+        JUSPAY_SECRET_KEY_PATH: ${JUSPAY_SECRET_KEY_PATH}
+        JUSPAY_BASE_URL: ${JUSPAY_BASE_URL}
+        JUSPAY_MERCHANT_ID: ${JUSPAY_MERCHANT_ID}
+        JUSPAY_API_KEY: ${JUSPAY_API_KEY}
         FIREBASE_ADMIN_SERVICE_ACCOUNT: ${FIREBASE_ADMIN_SERVICE_ACCOUNT}
         ONDC_BASE_API_URL: ${ONDC_BASE_API_URL}
+        JUSPAY_WEBHOOK_USERNAME: ${JUSPAY_WEBHOOK_USERNAME}
+        JUSPAY_WEBHOOK_PASSWORD: ${JUSPAY_WEBHOOK_PASSWORD}
         DOMAIN: ${DOMAIN}
         CITY: ${CITY}
         COUNTRY: ${COUNTRY}
@@ -115,59 +105,139 @@ services:
         SSE_TIMEOUT: ${SSE_TIMEOUT}
         MMI_CLIENT_ID: ${MMI_CLIENT_ID}
         MMI_CLIENT_SECRET: ${MMI_CLIENT_SECRET}
-        AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
-        AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
-        S3_VERSION: "v4"
-        S3_REGION: ${S3_REGION}
-        S3_BUCKET: ${S3_BUCKET}
-        RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID}
-        RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET}
-        RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET}
-        BHASHINI_REDIS_PORT: ${BHASHINI_REDIS_PORT}
-        BHASHINI_REDIS_HOST: cache
-        BHASHINI_USERID: ${BHASHINI_USERID}
-        BHASHINI_ULCA_API_KEY: ${BHASHINI_ULCA_API_KEY}
-        DLT_CUSTOMER_ID: ${DLT_CUSTOMER_ID}
-        DLT_ENTITY_ID: ${DLT_ENTITY_ID}
-        DLT_USERNAME: ${DLT_USERNAME}
-        DLT_PASSWORD: ${DLT_PASSWORD}
-        DLT_SOURCE: ${DLT_SOURCE}
-        DLT_MESSAGE_TYPE: ${DLT_MESSAGE_TYPE}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
     ports:
       - 3000:3000
     expose:
       - 3000
     depends_on:
       - mongo
+
+  biap-igm-node-js:
+    build:
+      context: biap-igm-node-js
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+    environment:
+      DB_CONNECTION_STRING: ${DB_CONNECTION_STRING}
+      PROTOCOL_BASE_URL: ${PROTOCOL_BASE_URL}
+      SSE_TIMEOUT: ${SSE_TIMEOUT}
+      DOMAIN: ${DOMAIN}
+      COUNTRY: ${COUNTRY}
+      BAP_ID: ${BAP_ID}
+      EXPECTED_RESPONSE_TIME: ${EXPECTED_RESPONSE_TIME}
+      EXPECTED_RESOLUTION_TIME: ${EXPECTED_RESOLUTION_TIME}
+      BUGZILLA_API_KEY: ${BUGZILLA_API_KEY}
+      BUGZILLA_SERVICE_URI: ${BUGZILLA_SERVICE_URI}
+      BAP_URL: ${BAP_URL}
+      VOLUME_IMAGES_BASE_URL: ${VOLUME_IMAGES_BASE_URL}
+    container_name: biap-igm-node-js
+    ports:
+      - "8989:6969"
+    expose:
+      - 8989
+    depends_on:
+      - mongo
     volumes:
-      - type: bind
-        source: ./biap-client-node-js/data/
-        target: /data/
-    networks:
-      - ondc-bap
+      - "./images:/app/images"
+    restart: always
 
   py-ondc-protocol:
-    image: navdeep710/ondc-protocol-layer-server:pr-sse-v7.8
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+    build:
+      context: py-ondc-protocol/webserver
+      dockerfile: Dockerfile
     container_name: py-ondc-protocol
     environment:
       ENV: ${PROTOCOL_ENV}
       MONGO_DATABASE_HOST: ${MONGO_DATABASE_HOST}
       BAP_URL: ${BAP_URL}
       CLIENT_WEBHOOK_ENDPOINT: ${CLIENT_WEBHOOK_ENDPOINT}
-      REGISTRY_BASE_URL: ${REGISTRY_BASE_URL}
       BAP_PRIVATE_KEY: ${BAP_PRIVATE_KEY}
-      VERIFICATION_ENABLE: ${VERIFICATION_ENABLE}
       BAP_UNIQUE_KEY_ID: ${BAP_UNIQUE_KEY_ID}
       BAP_PUBLIC_KEY: ${BAP_PUBLIC_KEY}
       BAP_ID: ${BAP_ID}
+      VERIFICATION_ENABLE: ${VERIFICATION_ENABLE}
+      RABBITMQ_HOST: ${RABBITMQ_HOST}
+      FLASK_SERVER: "True"
+      QUEUE_ENABLE: "True"
     ports:
       - 5555:5555
     expose:
       - 5555
-    depends_on:
-      - mongo
-    networks:
-      - ondc-bap
 
-networks:
-  ondc-bap:
+  py-protocol-consumer:
+    build:
+      context: py-ondc-protocol/webserver
+      dockerfile: dockerfile-consumer
+    container_name: bap-protocol-consumer
+    depends_on:
+      - rabbitmq
+      - mongo
+    environment:
+      ENV: ${PROTOCOL_ENV}
+      RABBITMQ_HOST: ${RABBITMQ_HOST}
+      BAP_PRIVATE_KEY: ${BAP_PRIVATE_KEY}
+      BAP_UNIQUE_KEY_ID: ${BAP_UNIQUE_KEY_ID}
+      BAP_PUBLIC_KEY: ${BAP_PUBLIC_KEY}
+      BAP_ID: ${BAP_ID}
+      FLASK_SERVER: "False"
+
+  rabbitmq:
+    image: rabbitmq:3.10-management
+    container_name: rabbitmq
+    hostname: rabbitmq
+    ports:
+      - 5672:5672
+      - 15672:15672
+
+
+  bugzilla-node-backend:
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+    container_name: bugzilla-node-dev
+    build:
+      context: biap-bugzilla-service
+      dockerfile: Dockerfile.production
+    environment:
+      ENV: prod
+      BUGZILLA_API_KEY: ${BUGZILLA_API_KEY}
+      BUGZILLA_BASE_URI: ${BUGZILLA_BASE_URI}
+      BUGZILLA_ADMIN_EMAIL: ${BUGZILLA_ADMIN_EMAIL}
+    ports:
+      - "8001:8001"
+    expose:
+      - 8001
+    restart: always
+
+  bugzilla-dev-service:
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+    build:
+      context: ./biap-bugzilla-service/bugzilla-main
+      dockerfile: Dockerfile
+    environment:
+      BUGZILLA_WWW: /var/www/html/bugzilla/
+      BUGZILLA_ADMIN_EMAIL: ${BUGZILLA_ADMIN_EMAIL}
+    container_name: bugzilla-dev-service
+    image: shameerkc/bugzilla-dev-sqlite
+    ports:
+      - "90:80"
+      - "5989:5900"
