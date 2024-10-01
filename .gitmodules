@@ -10,7 +10,7 @@
 	url = https://github.com/poutinedevicto/biap-client-node-js
 [submodule "py-ondc-protocol"]
 	path = py-ondc-protocol
-	url = https://github.com/ONDC-Official/py-protocol-layer.git
+	url = https://github.com/poutinedevicto/py-protocol-layer.git
 	branch = master
 [submodule "biap-igm-node-js"]
 	path = biap-igm-node-js
